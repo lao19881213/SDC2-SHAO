@@ -234,28 +234,43 @@ for k in pro_arr[rank]:
     else:
         looping_over_channels(k)
 
+comm.Barrier()
+
 #Writing the position and channel frequency of the cross-matched sources into a catalog:
 if rank==0:
    if os.path.exists('raw_cat1.txt'):
       os.remove('raw_cat1.txt')
-   for k in range(len(freq_comb)):
-       #Removing cross-matched channel catalog with no source:
-       if not os.path.exists(files6[k]):
-           continue
-       #Checking if the frequency of channel and the channel catalog name is matching: Not needed
-       if freq_comb[k]!=float(files6[k].split('_f.cat')[0]):
-           logging.info('The frequency %f is not matching with channel catalog file name!'%freq_comb[k])
-           continue
-       #Remove the duplicate source positions:
-       df1=pd.read_csv(files6[k],sep='\s+', na_filter=False,header=None, skiprows=0,dtype='unicode')
-       df2=df1.drop_duplicates(subset=[0,1],keep='first')
-       df2[5]=freq_comb[k]
-       df2.to_csv(files7[k],sep=' ', columns=[0,1,5], header=False, index=False)
-       #Save all source positions to a file:
-       lines = open(files7[k], 'r').readlines()
-       open('raw_cat1.txt', 'a').writelines(lines)
+
+lines = []
+pro_arr = np.array_split(np.arange(len(freq_comb)),num_process)
+for k in pro_arr[rank]:
+#for k in range(len(freq_comb)):
+    #Removing cross-matched channel catalog with no source:
+    if not os.path.exists(files6[k]):
+        continue
+    #Checking if the frequency of channel and the channel catalog name is matching: Not needed
+    if freq_comb[k]!=float(files6[k].split('_f.cat')[0]):
+        logging.info('The frequency %f is not matching with channel catalog file name!'%freq_comb[k])
+        continue
+    #Remove the duplicate source positions:
+    df1=pd.read_csv(files6[k],sep='\s+', na_filter=False,header=None, skiprows=0,dtype='unicode')
+    df2=df1.drop_duplicates(subset=[0,1],keep='first')
+    df2[5]=freq_comb[k]
+    df2.to_csv(files7[k],sep=' ', columns=[0,1,5], header=False, index=False)
+    #Save all source positions to a file:
+    lines.extend(open(files7[k], 'r').read().splitlines())
+
+comm.Barrier()
+
+lines_ga = comm.gather(lines,root=0)
 
 if rank==0:
+   lines_comb = np.concatenate(lines_ga,axis = 0)
+   print(lines_comb.shape,"==================lines")
+   with open('raw_cat1.txt', 'w') as f:   
+        fc = os.linesep.join(lines_comb)
+        f.write(fc)
+   #open('raw_cat1.txt', 'a').writelines(lines_comb)
    delete_temp(['.cat'])
 #print('\n\n')
 
